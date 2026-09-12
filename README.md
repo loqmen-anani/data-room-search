@@ -1,6 +1,6 @@
 # data-room-search — recherche dans une data room de contrats
 
-Un **tool** qu'un agent LLM appelle pour répondre aux questions d'un avocat sur une data room (« Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ? », « Lesquels sont régis par un droit étranger ? », « Y a-t-il des doublons ? »). Il est exposé en **serveur MCP**, donc utilisable depuis Claude (Desktop, Code ou claude.ai) ou tout autre client MCP. Un agent de démonstration sur LLM local (Ollama) est aussi fourni.
+Un **tool** qu'un agent LLM appelle pour répondre aux questions d'un avocat sur une data room (« Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ? », « Lesquels sont régis par un droit étranger ? », « Y a-t-il des doublons ? », « Lesquels prévoient une clause de changement de contrôle ? »). Il est exposé en **serveur MCP**, donc utilisable depuis Claude (Desktop, Code ou claude.ai) ou tout autre client MCP. Un agent de démonstration sur LLM local (Ollama) est aussi fourni.
 
 Le repo est livré avec une data room **fictive** de 20 contrats (voir [Données](#données)) ; une vraie en contiendrait des milliers.
 
