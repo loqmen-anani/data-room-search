@@ -1,11 +1,11 @@
 # Démo de bout en bout
 
-Générée le 2026-09-12 22:03 par `python scripts/demo.py`, data room `exemple_data_room.json`, modèle `huihui_ai/qwen3.5-abliterated:27b` (Ollama).
+Générée le 2026-09-12 22:15 par `python scripts/demo.py`, data room `exemple_data_room.json`, modèle `huihui_ai/qwen3.5-abliterated:27b` (Ollama).
 Pour chaque question : les appels de tools choisis par l'agent, puis sa réponse.
 
 ## Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ?
 
-**Appel** `search_data_room` → 1 résultat(s) : ['c04'], inconnus : ['c08', 'c17']
+**Appel** `search_data_room` → 1 résultat(s) : ['c04'], inconnus : ['c08', 'c17'], écartés par un avenant : ['c09']
 ```json
 {
   "filters": {
@@ -31,7 +31,7 @@ Pour chaque question : les appels de tools choisis par l'agent, puis sa réponse
 > *   **c08** et **c17** : Leur situation ne peut pas être déterminée (données inconnues).
 > *   **c09** : Initialement prévu pour expirer le 30 juin 2026, son terme a été reporté au 30 juin 2028 par l'avenant c18.
 
-_1 appel(s) de tool · 81.3 s_
+_1 appel(s) de tool · 79.5 s_
 
 ## Lesquels sont régis par un droit étranger ?
 
@@ -58,7 +58,7 @@ _1 appel(s) de tool · 81.3 s_
 >
 > **Note :** Le contrat **c10** est exclu de cette liste car sa situation ne peut pas être déterminée (données manquantes sur la loi applicable).
 
-_1 appel(s) de tool · 56.8 s_
+_1 appel(s) de tool · 54.5 s_
 
 ## Y a-t-il des doublons ?
 
@@ -85,7 +85,7 @@ _1 appel(s) de tool · 56.8 s_
 >
 > Aucun autre doublon n'a été identifié parmi les 20 contrats répertoriés.
 
-_1 appel(s) de tool · 127.5 s_
+_1 appel(s) de tool · 122.9 s_
 
 ## Un changement de contrôle du Groupe Brenalis aurait-il des conséquences sur ses contrats ?
 
@@ -110,4 +110,4 @@ _1 appel(s) de tool · 127.5 s_
 >
 > Aucun autre contrat n'a été identifié comme contenant une clause spécifique sur le changement de contrôle pour le Groupe Brenalis dans cette recherche.
 
-_1 appel(s) de tool · 46.1 s_
+_1 appel(s) de tool · 43.7 s_

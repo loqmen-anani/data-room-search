@@ -26,7 +26,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("questions", nargs="*", help="questions à poser (défaut : questions types du jeu fictif)")
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--out", type=Path, help="fichier de sortie (défaut : docs/demo.md sur le jeu fictif, private/demo.md sinon)")
+    parser.add_argument("--out", type=Path,
+                        help="fichier de sortie (défaut : docs/demo.md sur le jeu fictif, private/demo.md sinon)")
     args = parser.parse_args()
 
     public = DATA_PATH.resolve() == EXAMPLE_DATA.resolve()

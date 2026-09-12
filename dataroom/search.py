@@ -3,7 +3,14 @@ from datetime import date
 
 from dataroom.indexer import DURATION_HEADING, DataRoomIndex, plain, tokenize
 from dataroom.models import (
-    ArticleHit, Chunk, Contract, ContractHit, DateRange, Filters, SearchRequest, SearchResponse,
+    ArticleHit,
+    Chunk,
+    Contract,
+    ContractHit,
+    DateRange,
+    Filters,
+    SearchRequest,
+    SearchResponse,
 )
 
 MAX_ARTICLES_PER_CONTRACT = 3

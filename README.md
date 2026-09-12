@@ -27,7 +27,8 @@ Prérequis : Python ≥ 3.10.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                    # 37 tests, sans LLM (serveur MCP compris)
+pytest                                    # 43 tests, sans LLM (serveur MCP compris)
+ruff check .                              # lint (même vérification qu'en CI)
 python -m dataroom.indexer                # 20 contrats, 106 articles indexés
 bash scripts/run_query.sh "exclusivité territoriale"          # le tool seul, sortie JSON
 
@@ -187,7 +188,7 @@ Trace complète de l'agent sur les questions types : [`docs/demo.md`](docs/demo.
 
 - **Avenants rattachés par une règle simple.** Seul le report de terme est appliqué, pas les autres modifications (prix, parties). Un avenant qui ne cite pas la date du contrat modifié, alors que plusieurs contrats sont possibles, n'est pas rattaché ; il porte alors un avertissement.
 - **Pas de tool dédié aux doublons** ({c11, c19} : la même convention téléversée deux fois ; {c05, c20} : un contrat et sa traduction de courtoisie). L'agent peut les repérer en demandant la liste complète et en comparant parties, types et dates, mais avec des milliers de contrats cette liste ne tiendrait pas dans son contexte : il faut un traitement dédié.
-- **Qualité des données** laissée de côté volontairement : normalisation minimale (dates, SIREN, noms d'entités), pas de détection des contradictions entre métadonnées et texte (c15 : fin au 31/03/2027 dans les métadonnées, au 30/09/2026 dans le texte).
+- **Qualité des données** laissée de côté volontairement : normalisation minimale (dates, SIREN, noms d'entités ; une métadonnée absente vaut « non renseigné » et produit un avertissement plutôt qu'une erreur), pas de détection des contradictions entre métadonnées et texte (c15 : fin au 31/03/2027 dans les métadonnées, au 30/09/2026 dans le texte), sauf pour le terme cité dans un avenant.
 - **Bruit sur les requêtes texte** : aucun seuil de pertinence, et le préfixe titre/type fait remonter des contrats dont seul le titre correspond.
 - **Identifiants d'entités tirés du nom normalisé.** Deux écritures vraiment différentes d'une même société (sigle, faute de frappe) ne sont pas rapprochées. C'est voulu, pour éviter les fusions approximatives, mais à grande échelle il faudrait un tool de résolution des parties.
 
@@ -212,7 +213,7 @@ Ajouter un tool de doublons ; ajouter un seuil de pertinence et les embeddings ;
 ├── scripts/           run_query.sh (tool seul), demo.py (agent sur des questions types), mcp_tunnel.sh (URL HTTPS pour Claude)
 ├── docs/demo.md       trace de la démo, sur le jeu fictif
 ├── tests/             un fichier par module, sur le jeu fictif ; l'agent est testé avec un faux LLM
-├── .github/workflows/ CI : les tests sur Python 3.10 et 3.14
+├── .github/workflows/ CI : lint (ruff) et tests sur Python 3.10 et 3.14
 └── private/           non versionné : données réelles et notes locales
 ```
 

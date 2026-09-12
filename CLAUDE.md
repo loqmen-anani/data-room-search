@@ -27,9 +27,10 @@ Positionnement : c'est un **RAG agentique hybride**. Le chemin `query` est du RA
   - Données réelles : dans `private/`, chargées avec `DATAROOM_DATA=private/<fichier>.json`.
   - Tests sur le jeu fictif (`tests/conftest.py` fixe `DATAROOM_DATA` avant tout import). Un test local sur données réelles peut vivre dans `tests/test_enonce.py`, exclu de git et ignoré si les données sont absentes.
   - `scripts/demo.py` écrit dans `private/`, et non dans `docs/`, dès que la data room n'est pas le jeu fictif.
+  - `tests/test_enonce.py` (local) : ses attentes datent d'avant le rattachement des avenants ; à mettre à jour si on veut le garder vert.
 - **Aucune data room codée en dur** : identifiant d'entité = nom normalisé (formes sociales et civilités retirées, `entity_id()` dans `loader.py`), sans rapprochement approximatif ; pas de table d'alias ni de `Literal`. Sur le jeu fictif, « Groupe Brenalis » a pour identifiant `groupe_brenalis`.
 - **BM25 seul pour l'instant** : les embeddings se brancheront dans `search.py` (fusion RRF) sans changer les formats d'entrée et de sortie.
-- **Qualité des données hors périmètre pour l'instant** : normalisation minimale (dates multi-formats, SIREN, noms d'entités) dans `dataroom/loader.py`.
+- **Qualité des données hors périmètre pour l'instant** : normalisation minimale (dates multi-formats, SIREN, noms d'entités) dans `dataroom/loader.py`. Le loader tolère une clé absente ou vide (valeur `None` ou « non renseigné ») et signale les incohérences (`siren_parties` de longueur différente, date illisible) dans `warnings`, exposés dans les résultats des deux tools.
 - Pas de SQL libre pour l'agent : peu de tools, typés.
 - Schéma des tools aplati (`_simplify` dans `tools.py`) : pas de `$ref` ni d'`anyOf`, moins de tokens, plus fiable pour un petit modèle.
 - **LLM de l'agent : local, via Ollama** (`huihui_ai/qwen3.5-abliterated:27b` par défaut, surchargeable via `DATAROOM_MODEL` ou `--model`). Appels HTTP directs avec `httpx`, sans SDK. Une erreur de tool est renvoyée au modèle (et non levée) pour qu'il corrige son appel.
@@ -45,7 +46,7 @@ Positionnement : c'est un **RAG agentique hybride**. Le chemin `query` est du RA
 ├── README.md               présentation pour un lecteur humain
 ├── CLAUDE.md
 ├── pyproject.toml          dépendances + config pytest
-├── .github/workflows/pytest.yml    CI : pytest sur Python 3.10 et 3.14
+├── .github/workflows/pytest.yml    CI : ruff + pytest sur Python 3.10 et 3.14
 ├── data/
 │   └── exemple_data_room.json      jeu fictif, publiable
 ├── dataroom/
@@ -74,6 +75,7 @@ Identifiants : contrats `c01`…`c20` (ordre du JSON, à partir de 1), articles 
 ```bash
 .venv/bin/pip install -e ".[dev]"                     # installation (projet + pytest)
 .venv/bin/pytest -q                                   # tests (sans Ollama)
+.venv/bin/ruff check .                                # lint (config dans pyproject.toml ; la CI l'exécute aussi)
 .venv/bin/python -m dataroom.indexer                  # stats de l'index (jeu fictif)
 DATAROOM_DATA=private/<fichier>.json .venv/bin/python -m dataroom.indexer   # sur des données réelles (locales)
 .venv/bin/uvicorn dataroom.api:app --port 8001 --reload   # API (le port 8000 est souvent occupé)

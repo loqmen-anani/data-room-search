@@ -64,7 +64,7 @@ async def call_tool(_ctx, params: types.CallToolRequestParams) -> types.CallTool
 
 server = Server(
     "data-room-search",
-    version="0.1.0",
+    version="0.2.0",
     instructions=INSTRUCTIONS,
     on_list_tools=list_tools,
     on_call_tool=call_tool,

@@ -13,6 +13,11 @@ def test_search_endpoint(client):
     resp = client.post("/tools/search_data_room", json={"filters": {"governing_law": {"in": ["droit suisse"]}}})
     assert resp.status_code == 200
     assert [r["contract_id"] for r in resp.json()["results"]] == ["c16"]
+    assert "warnings" not in resp.json()["results"][0]  # champs à None omis de la réponse
+
+    resp = client.post("/tools/search_data_room",
+                       json={"filters": {"entity_ids": ["groupe_brenalis"], "end_date": {"before": "2026-12-31"}}})
+    assert list(resp.json()["excluded_by_amendment"]) == ["c09"]
 
 
 def test_errors(client):

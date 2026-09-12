@@ -18,3 +18,10 @@ def test_tool_definitions_are_flat_with_data_room_values():
 def test_run_tool_get_contract():
     out = json.loads(run_tool("get_contract", {"contract_id": "c18", "chunk_ids": ["c18-2"]}))
     assert out["articles"][0]["heading"] == "ARTICLE 2 — REPORT DU TERME"
+    assert out["amends"] == ["c09"] and "amended_by" not in out
+
+
+def test_get_contract_points_to_its_amendments():
+    out = json.loads(run_tool("get_contract", {"contract_id": "c09"}))
+    assert out["amended_by"] == ["c18"]
+    assert out["warnings"] == ["terme modifié par l'avenant c18 : 2026-06-30 → 2028-06-30"]

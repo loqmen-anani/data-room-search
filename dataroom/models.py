@@ -8,7 +8,6 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
-
 # --- Data room ----------------------------------------------------------------
 
 class Party(BaseModel):

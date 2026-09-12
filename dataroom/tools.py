@@ -13,12 +13,17 @@ class GetContract(BaseModel):
     """Renvoie le texte d'un contrat, découpé par article, pour vérifier ou citer une clause précise."""
 
     contract_id: str = Field(description="Identifiant renvoyé par search_data_room, ex. « c07 ».")
-    chunk_ids: list[str] | None = Field(None, description="Limiter à ces articles (ex. « c07-2 »). Vide = tout le contrat.")
+    chunk_ids: list[str] | None = Field(
+        None, description="Limiter à ces articles (ex. « c07-2 »). Vide = tout le contrat.",
+    )
 
 
 class ContractText(BaseModel):
     contract_id: str
     title: str
+    amends: list[str] | None = None  # pour un avenant : les contrats qu'il modifie
+    amended_by: list[str] | None = None  # les avenants qui modifient ce contrat : à consulter aussi
+    warnings: list[str] | None = None
     articles: list[Chunk]
 
 
@@ -35,7 +40,8 @@ def get_contract(params: GetContract) -> ContractText:
     chunks = index.contract_chunks(contract.contract_id)
     if params.chunk_ids:
         chunks = [ch for ch in chunks if ch.chunk_id in params.chunk_ids]
-    return ContractText(contract_id=contract.contract_id, title=contract.title, articles=chunks)
+    return ContractText(contract_id=contract.contract_id, title=contract.title, amends=contract.amends or None,
+                        amended_by=contract.amended_by or None, warnings=contract.warnings or None, articles=chunks)
 
 
 TOOLS = {

@@ -20,7 +20,7 @@ def search_data_room_endpoint(req: SearchRequest) -> SearchResponse:
     try:
         return search(get_index(), req)
     except ValueError as e:  # valeur de filtre absente de la data room
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @app.post("/tools/get_contract", response_model=ContractText)
@@ -28,7 +28,7 @@ def get_contract_endpoint(params: GetContract) -> ContractText:
     try:
         return get_contract(params)
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=e.args[0])
+        raise HTTPException(status_code=404, detail=e.args[0]) from e
 
 
 @app.get("/tools")

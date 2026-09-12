@@ -18,7 +18,8 @@ def fake_llm(replies):
 
 
 def tool_call(name, arguments):
-    return {"role": "assistant", "content": "", "tool_calls": [{"id": "call_1", "function": {"name": name, "arguments": arguments}}]}
+    call = {"id": "call_1", "function": {"name": name, "arguments": arguments}}
+    return {"role": "assistant", "content": "", "tool_calls": [call]}
 
 
 def test_loop_runs_tool_then_answers(monkeypatch):
@@ -47,6 +48,13 @@ def test_invalid_arguments_are_returned_to_the_model(monkeypatch):
     out = agent.run_agent("…")
 
     assert "ValidationError" in json.loads(out.tool_calls[0].result)["error"]
+
+
+def test_summarize_result_mentions_amendments():
+    result = json.dumps({"results": [{"contract_id": "c04"}], "excluded_unknown": ["c08"],
+                         "excluded_by_amendment": {"c09": "fin 2026-06-30 → 2028-06-30 (avenant c18)"}})
+    assert agent.summarize_result(result) == "1 résultat(s) : ['c04'], inconnus : ['c08'], écartés par un avenant : ['c09']"
+    assert agent.summarize_result(json.dumps({"error": "x"})) == "erreur : x"
 
 
 def test_ollama_tools_format():

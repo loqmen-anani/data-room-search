@@ -18,9 +18,10 @@ from dataroom.models import Chunk, Contract
 # "ARTICLE 6 — DURÉE" (tiret cadratin, demi-cadratin ou simple)
 ARTICLE_RE = re.compile(r"^ARTICLE\s+\d+\s*[—–-].*$", re.MULTILINE)
 
-# Sur un texte passé par `plain` : article qui fixe le terme, contrat qui en modifie un autre
-DURATION_HEADING = re.compile(r"DUREE|PROROGATION|TERM")
-AMENDMENT_RE = re.compile(r"AVENANT|AMENDMENT")
+# Sur un texte passé par `plain` : article qui fixe le terme (« DURÉE », « REPORT DU TERME », « TERM »), et contrat qui
+# en modifie un autre. Frontières de mot : « DÉTERMINATION DU PRIX » ou « TERMINATION » ne sont pas des articles de durée.
+DURATION_HEADING = re.compile(r"\b(DUREE|PROROGATION|TERME?|TERMS?)\b")
+AMENDMENT_RE = re.compile(r"\b(AVENANTS?|AMENDMENTS?)\b")
 
 STOPWORDS = set("""
 au aux avec ce ces dans de des du elle en et eux il je la le les leur lui ma mais me meme mes moi mon ne nos
@@ -116,7 +117,9 @@ class DataRoomIndex:
 
         Contrat modifié : mêmes parties, signé avant l'avenant, et dont la date de signature est citée dans l'avenant
         (à défaut, le seul contrat possible). Nouveau terme : dernière date citée dans l'article DURÉE / PROROGATION /
-        TERME de l'avenant, à défaut sa date de fin. Sans contrat identifié, l'avenant reste isolé, avec un avertissement.
+        TERME de l'avenant, à défaut la date de fin de l'avenant ; si les deux existent et diffèrent, l'avenant porte un
+        avertissement. Sans article de durée, l'avenant ne touche pas au terme (avenant de prix, par exemple).
+        Sans contrat identifié, l'avenant reste isolé, avec un avertissement.
         """
         amendments = [c for c in self.contracts.values() if AMENDMENT_RE.search(plain(f"{c.contract_type} {c.title}"))]
         amendment_ids = {a.contract_id for a in amendments}
@@ -135,11 +138,15 @@ class DataRoomIndex:
             term_articles = [ch for ch in self.contract_chunks(a.contract_id) if DURATION_HEADING.search(plain(ch.heading))]
             term_dates = [d for ch in term_articles for d in dates_in_text(ch.text)]
             new_end = (term_dates[-1] if term_dates else a.end_date) if term_articles else None
+            if term_dates and a.end_date and a.end_date != new_end:
+                a.warnings.append(f"terme cité dans l'avenant ({new_end}) différent de sa date de fin ({a.end_date})")
             for c in targets:
                 a.amends.append(c.contract_id)
                 c.amended_by.append(a.contract_id)
                 if new_end and new_end != c.end_date:
-                    c.warnings.append(f"terme modifié par l'avenant {a.contract_id} : {c.end_date or 'non renseigné'} → {new_end}")
+                    c.warnings.append(
+                        f"terme modifié par l'avenant {a.contract_id} : {c.end_date or 'non renseigné'} → {new_end}"
+                    )
                     c.end_date = new_end
 
     def _contextualize(self, chunk: Chunk) -> str:

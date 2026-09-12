@@ -101,7 +101,11 @@ def summarize_result(result: str) -> str:
     if "error" in data:
         return f"erreur : {data['error'][:200]}"
     if "results" in data:
-        return f"{len(data['results'])} résultat(s) : {[r['contract_id'] for r in data['results']]}, inconnus : {data['excluded_unknown']}"
+        summary = f"{len(data['results'])} résultat(s) : {[r['contract_id'] for r in data['results']]}"
+        summary += f", inconnus : {data['excluded_unknown']}"
+        if data.get("excluded_by_amendment"):
+            summary += f", écartés par un avenant : {list(data['excluded_by_amendment'])}"
+        return summary
     return f"{data.get('contract_id')} : {len(data.get('articles', []))} article(s)"
 
 
