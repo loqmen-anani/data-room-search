@@ -1,6 +1,6 @@
 # data-room-search — recherche dans une data room de contrats
 
-Un **tool** qu'un agent LLM appelle pour répondre aux questions d'un avocat sur une data room (« Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ? », « Lesquels sont régis par un droit étranger ? », « Y a-t-il des doublons ? »). Il est exposé en **serveur MCP**, donc utilisable depuis Claude (Desktop, Code ou claude.ai) ou tout autre client MCP. Un agent de démonstration sur LLM local (Ollama) est aussi fourni.
+Un **tool** qu'un agent LLM appelle pour répondre aux questions d'un avocat sur une data room (« Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ? », « Lesquels sont régis par un droit étranger ? », « Lesquels prévoient une clause de changement de contrôle ? »). Il est exposé en **serveur MCP**, donc utilisable depuis Claude (Desktop, Code ou claude.ai) ou tout autre client MCP. Un agent de démonstration sur LLM local (Ollama) est aussi fourni.
 
 Le repo est livré avec une data room **fictive** de 20 contrats (voir [Données](#données)) ; une vraie en contiendrait des milliers.
 
@@ -41,9 +41,9 @@ uvicorn dataroom.api:app --port 8001      # API REST : GET /tools, POST /tools/s
 
 ## Brancher un client MCP
 
-N'importe quel client MCP (Claude Desktop, Claude Code, Cursor, un agent maison) peut appeler `search_data_room` et `get_contract`. C'est le même contrat que l'API REST et l'agent Ollama : les trois s'appuient sur `tool_definitions()` et `run_tool()` de [`dataroom/tools.py`](dataroom/tools.py).
+N'importe quel client MCP (Claude Desktop, Claude Code, Cursor, un agent maison) peut appeler `search_data_room` et `get_contract`.
 
-**En local, en stdio** : la commande `dataroom-mcp`, installée par `pip install -e .`, lance le serveur sans argument.
+**En local, en stdio** : la commande `dataroom-mcp`, installée par `pip install -e .`, lance le serveur sans argument. Claude Desktop et Claude Code utilisent ce mécanisme.
 
 ```bash
 claude mcp add dataroom -- /chemin/vers/data-room-search/.venv/bin/dataroom-mcp     # Claude Code
@@ -81,20 +81,18 @@ claude mcp add --transport http dataroom http://<hôte>:8002/mcp --header "Autho
 
 En production, il faudrait ajouter HTTPS (reverse proxy) et, pour plusieurs utilisateurs, OAuth, que le SDK MCP prend en charge.
 
+**Via le connecteur personnalisé de Claude** (Desktop ou claude.ai), qui exige une URL HTTPS publique : `bash scripts/mcp_tunnel.sh` ouvre un tunnel Cloudflare gratuit et sans compte (`brew install cloudflared`), lance le serveur derrière un chemin secret, puis affiche l'URL à coller dans Claude.
+- Le chemin secret sert de clé, car le connecteur ne transmet pas de jeton : ne partage pas l'URL.
+- Seul le domaine du tunnel est accepté, en plus de localhost.
+- L'URL change à chaque lancement et ne fonctionne que tant que le script tourne.
+- Avec des données réelles, ce tunnel les rend accessibles à quiconque a l'URL : à réserver au jeu fictif.
+
 Testé avec :
 - le client MCP officiel en Python (in-process, stdio, HTTP) ;
 - le MCP Inspector, en TypeScript (stdio et HTTP) ;
 - Claude Code avec un vrai LLM (stdio) : il appelle `search_data_room` avec les bons filtres et cite les contrats ;
 - `curl`, y compris sur l'URL HTTPS publique du tunnel (liste des tools, appel réel, et 404 sans le chemin secret) ;
 - le connecteur personnalisé de Claude, via le tunnel.
-
-Claude Desktop utilise le même mécanisme stdio que Claude Code.
-
-**Via le connecteur personnalisé de Claude** (Desktop ou claude.ai), qui exige une URL HTTPS publique : `bash scripts/mcp_tunnel.sh` ouvre un tunnel Cloudflare gratuit et sans compte (`brew install cloudflared`), lance le serveur derrière un chemin secret, puis affiche l'URL à coller dans Claude.
-- Le chemin secret sert de clé, car le connecteur ne transmet pas de jeton : ne partage pas l'URL.
-- Seul le domaine du tunnel est accepté, en plus de localhost.
-- L'URL change à chaque lancement et ne fonctionne que tant que le script tourne.
-- Avec des données réelles, ce tunnel les rend accessibles à quiconque a l'URL : à réserver au jeu fictif.
 
 ## Données
 
@@ -143,7 +141,7 @@ flowchart LR
 - sans `query` → **tous** les contrats qui passent les filtres : une question « lesquels ? » exige une réponse exhaustive ;
 - avec `query` → classement BM25 des articles ; le score d'un contrat est celui de son meilleur article.
 
-**4. Sortie.** Pour chaque contrat : les filtres satisfaits et les articles qui justifient le résultat, que l'agent cite. Un contrat n'est **jamais écarté en silence** : s'il manque le champ filtré, il est listé dans `excluded_unknown` ; si c'est un avenant qui l'écarte du filtre de date, dans `excluded_by_amendment`. Chaque résultat porte aussi ses avenants (`amends`, `amended_by`) et ses avertissements (`warnings` : SIREN invalide, terme modifié…).
+**4. Sortie.** Pour chaque contrat : les filtres satisfaits et les articles qui justifient le résultat, que l'agent cite. Un contrat n'est **jamais écarté en silence** : s'il manque le champ filtré, il est listé dans `excluded_unknown` ; si c'est un avenant qui l'écarte du filtre de date, dans `excluded_by_amendment`. Chaque résultat porte aussi ses avenants (`amends`, `amended_by`) et ses avertissements (`warnings` : SIREN invalide, terme modifié…). Pour vérifier une clause, `get_contract` renvoie le texte d'un contrat article par article, avec les mêmes indications.
 
 ```json
 {
@@ -188,7 +186,7 @@ Trace complète de l'agent sur les questions types : [`docs/demo.md`](docs/demo.
 
 - **Avenants rattachés par une règle simple.** Seul le report de terme est appliqué, pas les autres modifications (prix, parties). Un avenant qui ne cite pas la date du contrat modifié, alors que plusieurs contrats sont possibles, n'est pas rattaché ; il porte alors un avertissement.
 - **Pas de tool dédié aux doublons** ({c11, c19} : la même convention téléversée deux fois ; {c05, c20} : un contrat et sa traduction de courtoisie). L'agent peut les repérer en demandant la liste complète et en comparant parties, types et dates, mais avec des milliers de contrats cette liste ne tiendrait pas dans son contexte : il faut un traitement dédié.
-- **Qualité des données** laissée de côté volontairement : normalisation minimale (dates, SIREN, noms d'entités ; une métadonnée absente vaut « non renseigné » et produit un avertissement plutôt qu'une erreur), pas de détection des contradictions entre métadonnées et texte (c15 : fin au 31/03/2027 dans les métadonnées, au 30/09/2026 dans le texte), sauf pour le terme cité dans un avenant.
+- **Qualité des données** laissée de côté volontairement. Normalisation minimale (dates, SIREN, noms d'entités) ; une métadonnée absente ou illisible vaut « non renseigné » et produit un avertissement, pas une erreur. Les contradictions entre métadonnées et texte ne sont pas détectées (c15 : fin au 31/03/2027 dans les métadonnées, au 30/09/2026 dans le texte), sauf pour le terme fixé par un avenant.
 - **Bruit sur les requêtes texte** : aucun seuil de pertinence, et le préfixe titre/type fait remonter des contrats dont seul le titre correspond.
 - **Identifiants d'entités tirés du nom normalisé.** Deux écritures vraiment différentes d'une même société (sigle, faute de frappe) ne sont pas rapprochées. C'est voulu, pour éviter les fusions approximatives, mais à grande échelle il faudrait un tool de résolution des parties.
 
@@ -204,7 +202,7 @@ Ajouter un tool de doublons ; ajouter un seuil de pertinence et les embeddings ;
 │   ├── config.py      configuration (variables d'environnement)
 │   ├── models.py      schémas d'entrée et de sortie du tool
 │   ├── loader.py      chargement et normalisation du JSON
-│   ├── indexer.py     découpage par article, BM25
+│   ├── indexer.py     découpage par article, BM25, rattachement des avenants
 │   ├── search.py      filtres, classement, articles pertinents
 │   ├── tools.py       définitions des tools et exécution
 │   ├── agent.py       boucle agent avec Ollama, CLI
