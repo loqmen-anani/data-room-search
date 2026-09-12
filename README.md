@@ -1,6 +1,6 @@
 # data-room-search — recherche dans une data room de contrats
 
-Un **tool** qu'un agent LLM appelle pour répondre aux questions d'un avocat sur une data room (« Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ? », « Lesquels sont régis par un droit étranger ? », « Lesquels prévoient une clause de changement de contrôle ? »). Il est exposé en **serveur MCP**, donc utilisable depuis Claude (Desktop, Code ou claude.ai) ou tout autre client MCP. Un agent de démonstration sur LLM local (Ollama) est aussi fourni.
+Un **tool** qu'un agent LLM appelle pour répondre aux questions d'un avocat sur une data room (« Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ? », « Lesquels sont régis par un droit étranger ? », « Y a-t-il des doublons ? »). Il est exposé en **serveur MCP**, donc utilisable depuis Claude (Desktop, Code ou claude.ai) ou tout autre client MCP. Un agent de démonstration sur LLM local (Ollama) est aussi fourni.
 
 Le repo est livré avec une data room **fictive** de 20 contrats (voir [Données](#données)) ; une vraie en contiendrait des milliers.
 
@@ -13,7 +13,7 @@ from dataroom.tools import run_tool, tool_definitions
 
 tool_definitions()  # nom, description et schéma des arguments : ce que le LLM voit
 run_tool("search_data_room", {"filters": {"entity_ids": ["groupe_brenalis"], "end_date": {"before": "2026-12-31"}}})
-# '{"total_candidates": 1, "excluded_unknown": ["c08", "c17"],
+# '{"total_candidates": 1, "total_results": 1, "excluded_unknown": ["c08", "c17"],
 #   "excluded_by_amendment": {"c09": "fin 2026-06-30 → 2028-06-30 (avenant c18)"}, "results": [{"contract_id": "c04", …}]}'
 ```
 
@@ -27,21 +27,21 @@ Prérequis : Python ≥ 3.10.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                    # 43 tests, sans LLM (serveur MCP compris)
+pytest                                    # 50 tests, sans LLM (serveur MCP compris)
 ruff check .                              # lint (même vérification qu'en CI)
 python -m dataroom.indexer                # 20 contrats, 106 articles indexés
 bash scripts/run_query.sh "exclusivité territoriale"          # le tool seul, sortie JSON
 
 claude mcp add dataroom -- "$PWD/.venv/bin/dataroom-mcp"      # le brancher à Claude Code (autres clients : ci-dessous)
 python -m dataroom.mcp_server --http      # ou en HTTP : http://127.0.0.1:8002/mcp
-uvicorn dataroom.api:app --port 8001      # API REST : GET /tools, POST /tools/search_data_room, /tools/get_contract, /ask
+uvicorn dataroom.api:app --port 8001      # API REST : GET /tools, POST /tools/search_data_room, /tools/get_contract, /tools/find_duplicates, /ask
 ```
 
 **Optionnel : agent local.** Avec [Ollama](https://ollama.com) et un modèle qui gère l'appel de tools : `python -m dataroom.agent "Lesquels sont régis par un droit étranger ?"`. Testé avec `huihui_ai/qwen3.5-abliterated:27b` (35 à 90 s par question sur un M1 Pro 32 Go) ; un autre modèle devrait fonctionner mais n'a pas été testé : `DATAROOM_MODEL=<modèle>` ou `--model`. Configuration complète dans [`dataroom/config.py`](dataroom/config.py) (`DATAROOM_DATA`, `DATAROOM_MODEL`, `OLLAMA_URL`, `DATAROOM_MCP_TOKEN`).
 
 ## Brancher un client MCP
 
-N'importe quel client MCP (Claude Desktop, Claude Code, Cursor, un agent maison) peut appeler `search_data_room` et `get_contract`.
+N'importe quel client MCP (Claude Desktop, Claude Code, Cursor, un agent maison) peut appeler `search_data_room`, `get_contract` et `find_duplicates`.
 
 **En local, en stdio** : la commande `dataroom-mcp`, installée par `pip install -e .`, lance le serveur sans argument. Claude Desktop et Claude Code utilisent ce mécanisme.
 
@@ -114,6 +114,7 @@ flowchart LR
     Q["Question de l'avocat"] --> A["Agent LLM (Claude via MCP, ou Ollama)"]
     A -- "search_data_room(query, filters)" --> S
     A -- "get_contract(id)" --> S
+    A -- "find_duplicates()" --> S
     S -- "contrats + articles pertinents (JSON)" --> A
     A --> R["Réponse qui cite contrats et articles"]
     D[("Data room JSON")] -- "1 chunk par article, index BM25" --> S
@@ -131,7 +132,8 @@ flowchart LR
     "signature_date": {"after": "2023-01-01", "before": null},
     "end_date": {"after": null, "before": "2026-12-31"}
   },
-  "top_k": 10
+  "limit": 20,
+  "offset": 0
 }
 ```
 
@@ -141,11 +143,14 @@ flowchart LR
 - sans `query` → **tous** les contrats qui passent les filtres : une question « lesquels ? » exige une réponse exhaustive ;
 - avec `query` → classement BM25 des articles ; le score d'un contrat est celui de son meilleur article.
 
+Dans les deux cas, la réponse est renvoyée par pages (`limit`, `offset`) : rien n'est coupé par un top-k, et `total_results` et `next_offset` disent à l'agent s'il doit demander la suite. Avec des milliers de contrats, une question comme « droit étranger » peut en renvoyer des centaines : l'agent les parcourt page par page au lieu de saturer son contexte.
+
 **4. Sortie.** Pour chaque contrat : les filtres satisfaits et les articles qui justifient le résultat, que l'agent cite. Un contrat n'est **jamais écarté en silence** : s'il manque le champ filtré, il est listé dans `excluded_unknown` ; si c'est un avenant qui l'écarte du filtre de date, dans `excluded_by_amendment`. Chaque résultat porte aussi ses avenants (`amends`, `amended_by`) et ses avertissements (`warnings` : SIREN invalide, terme modifié…). Pour vérifier une clause, `get_contract` renvoie le texte d'un contrat article par article, avec les mêmes indications.
 
 ```json
 {
   "total_candidates": 1,
+  "total_results": 1,
   "excluded_unknown": ["c08", "c17"],
   "excluded_by_amendment": {"c09": "fin 2026-06-30 → 2028-06-30 (avenant c18)"},
   "results": [{
@@ -160,6 +165,18 @@ flowchart LR
       "excerpt": "La mission commence le 1er décembre 2025 et s'achève au plus tard le 30 novembre 2026, date de remise du rapport définitif."
     }]
   }]
+}
+```
+
+**Doublons.** `find_duplicates` regroupe les contrats par jeu de parties, puis compare les contrats de chaque groupe (et seulement eux : la data room peut compter des milliers de contrats). Une paire est signalée si les deux contrats décrivent le même acte (même type et une date commune) ou si leur texte est quasi identique ; un contrat et son avenant ne sont jamais une paire. Chaque paire sort avec ses raisons, et c'est l'agent qui conclut.
+
+```json
+{
+  "contracts_compared": 20,
+  "pairs": [
+    {"contract_ids": ["c11", "c19"], "reasons": ["mêmes parties", "même type (prestation de services)", "même date de signature (2024-04-15)", "même date de fin (2027-04-14)", "texte identique à 100 %"], "text_similarity": 1.0},
+    {"contract_ids": ["c05", "c20"], "reasons": ["mêmes parties", "même type (contrat de licence)", "même date de signature (2024-10-01)", "même date de fin (2027-09-30)"], "text_similarity": 0.15}
+  ]
 }
 ```
 
@@ -179,20 +196,21 @@ flowchart LR
 | Contrats régis par un droit étranger | c05 (new-yorkais) et c20, sa traduction de courtoisie ; c16 (suisse) | c10 : loi non renseignée |
 | « exclusivité territoriale » | c03, ARTICLE 4 — EXCLUSIVITÉ | — |
 | « franchise » | c13, alors que ses métadonnées le typent « contrat de licence » | — |
+| Y a-t-il des doublons ? | {c11, c19} : la même convention téléversée deux fois ; {c05, c20} : un contrat et sa traduction de courtoisie | c08 et c14, signés le même jour par les mêmes parties, ne sont pas signalés : actes différents |
 
 Trace complète de l'agent sur les questions types : [`docs/demo.md`](docs/demo.md) (régénérable avec `python scripts/demo.py`).
 
 ## Limites connues
 
 - **Avenants rattachés par une règle simple.** Seul le report de terme est appliqué, pas les autres modifications (prix, parties). Un avenant qui ne cite pas la date du contrat modifié, alors que plusieurs contrats sont possibles, n'est pas rattaché ; il porte alors un avertissement.
-- **Pas de tool dédié aux doublons** ({c11, c19} : la même convention téléversée deux fois ; {c05, c20} : un contrat et sa traduction de courtoisie). L'agent peut les repérer en demandant la liste complète et en comparant parties, types et dates, mais avec des milliers de contrats cette liste ne tiendrait pas dans son contexte : il faut un traitement dédié.
+- **Doublons par une règle simple.** Les deux contrats doivent avoir exactement les mêmes parties : un doublon dont une partie est écrite différemment n'est pas vu. Une traduction n'est repérée que par ses métadonnées (même type, mêmes dates). Pas de détection des versions successives d'un même contrat aux dates différentes.
 - **Qualité des données** laissée de côté volontairement. Normalisation minimale (dates, SIREN, noms d'entités) ; une métadonnée absente ou illisible vaut « non renseigné » et produit un avertissement, pas une erreur. Les contradictions entre métadonnées et texte ne sont pas détectées (c15 : fin au 31/03/2027 dans les métadonnées, au 30/09/2026 dans le texte), sauf pour le terme fixé par un avenant.
 - **Bruit sur les requêtes texte** : aucun seuil de pertinence, et le préfixe titre/type fait remonter des contrats dont seul le titre correspond.
 - **Identifiants d'entités tirés du nom normalisé.** Deux écritures vraiment différentes d'une même société (sigle, faute de frappe) ne sont pas rapprochées. C'est voulu, pour éviter les fusions approximatives, mais à grande échelle il faudrait un tool de résolution des parties.
 
 ## Prochaines étapes
 
-Ajouter un tool de doublons ; ajouter un seuil de pertinence et les embeddings ; mesurer chaque changement sur un jeu de questions annoté par des juristes.
+Ajouter un seuil de pertinence et les embeddings ; mesurer chaque changement sur un jeu de questions annoté par des juristes.
 
 ## Structure
 
@@ -203,7 +221,8 @@ Ajouter un tool de doublons ; ajouter un seuil de pertinence et les embeddings ;
 │   ├── models.py      schémas d'entrée et de sortie du tool
 │   ├── loader.py      chargement et normalisation du JSON
 │   ├── indexer.py     découpage par article, BM25, rattachement des avenants
-│   ├── search.py      filtres, classement, articles pertinents
+│   ├── search.py      filtres, classement, articles pertinents, pagination
+│   ├── duplicates.py  doublons probables (par jeu de parties)
 │   ├── tools.py       définitions des tools et exécution
 │   ├── agent.py       boucle agent avec Ollama, CLI
 │   ├── api.py         API FastAPI

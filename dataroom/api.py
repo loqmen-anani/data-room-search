@@ -8,7 +8,8 @@ from pydantic import BaseModel
 
 from dataroom.agent import AgentAnswer, run_agent
 from dataroom.config import DEFAULT_MODEL
-from dataroom.models import SearchRequest, SearchResponse
+from dataroom.duplicates import find_duplicates
+from dataroom.models import DuplicatesResponse, FindDuplicates, SearchRequest, SearchResponse
 from dataroom.search import search
 from dataroom.tools import ContractText, GetContract, get_contract, get_index, tool_definitions
 
@@ -29,6 +30,14 @@ def get_contract_endpoint(params: GetContract) -> ContractText:
         return get_contract(params)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=e.args[0]) from e
+
+
+@app.post("/tools/find_duplicates", response_model=DuplicatesResponse)
+def find_duplicates_endpoint(params: FindDuplicates) -> DuplicatesResponse:
+    try:
+        return find_duplicates(get_index(), params)
+    except ValueError as e:  # entité absente de la data room
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
 @app.get("/tools")

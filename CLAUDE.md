@@ -7,14 +7,16 @@
 - Préférer des plans clairs et concis, centrés sur les grandes étapes ; ne pas partir dans le détail avant qu'on le demande.
 - Tout en français (échanges, docstrings, messages du tool).
 
-## Architecture retenue (4 étapes)
+## Architecture retenue (5 étapes)
 
-1. **Réception de la demande** : l'agent reformule la question et appelle un tool unique, `search_data_room`, validé par Pydantic : `query` (texte libre, optionnel), `filters` (`entity_ids`, `contract_types`, `governing_law` in/not_in, plages `signature_date` / `end_date`) et `top_k`. Les valeurs possibles (entités, types, lois) sont tirées de la data room chargée, injectées dans le schéma (`_inject_enums` dans `tools.py`) et vérifiées à la recherche : une valeur inconnue lève une erreur qui liste les valeurs possibles. Dates absolues uniquement : l'agent convertit « fin 2026 » en `2026-12-31`.
+1. **Réception de la demande** : l'agent reformule la question et appelle `search_data_room`, validé par Pydantic : `query` (texte libre, optionnel), `filters` (`entity_ids`, `contract_types`, `governing_law` in/not_in, plages `signature_date` / `end_date`) et la pagination `limit` (20 par défaut, max 100) / `offset`. Les valeurs possibles (entités, types, lois) sont tirées de la data room chargée, injectées dans le schéma (`_inject_enums` dans `tools.py`) et vérifiées à la recherche : une valeur inconnue lève une erreur qui liste les valeurs possibles. Dates absolues uniquement : l'agent convertit « fin 2026 » en `2026-12-31`.
 2. **Indexation** : un chunk par article (regex `ARTICLE n — TITRE`), le texte avant le premier article devient « PRÉAMBULE ». Titre, parties et type du contrat sont indexés avec chaque article. BM25 maison (sans dépendance), tokenisation FR (accents, mots vides, pluriels). Index en mémoire, reconstruit au démarrage (quelques ms). Avenants (type ou titre « avenant ») rattachés à leur contrat : mêmes parties, date de signature du contrat citée dans l'avenant (à défaut, seul candidat) ; un report de terme met à jour `end_date` (`initial_end_date` garde la valeur des métadonnées). Sans rattachement possible : avertissement sur l'avenant.
 3. **Recherche** : pré-filtrage sur les métadonnées, puis :
    - sans `query` → **tous** les candidats (réponse exhaustive, pas de top-k) ;
-   - avec `query` → BM25 sur les articles des candidats, score du contrat = son meilleur article, `top_k` premiers.
-4. **Sortie** : par contrat, `matched_filters` et jusqu'à 3 `relevant_articles` (heading + extrait + score). L'article qui justifie un filtre (DURÉE, LOI APPLICABLE) remonte aussi sans query. Un contrat dont le champ filtré est vide va dans `excluded_unknown`, un contrat écarté par le filtre de date à cause d'un avenant dans `excluded_by_amendment` : **jamais écarté en silence**. Chaque résultat porte `amends` / `amended_by` et `warnings` (SIREN invalide, terme modifié…) ; un contrat prorogé cite aussi l'article de durée de l'avenant. Le tool `get_contract` renvoie le texte par article pour vérifier.
+   - avec `query` → BM25 sur les articles des candidats, score du contrat = son meilleur article, classés.
+   - Dans les deux cas, une page de `limit` résultats à partir de `offset` ; `total_results` et `next_offset` (absent quand tout est renvoyé) disent à l'agent s'il doit demander la suite. Sur des milliers de contrats, « droit étranger » ne sature pas le contexte.
+4. **Sortie** : par contrat, `matched_filters` et jusqu'à 3 `relevant_articles` (heading + extrait + score). L'article qui justifie un filtre (DURÉE, LOI APPLICABLE) remonte aussi sans query. Un contrat dont le champ filtré est vide va dans `excluded_unknown`, un contrat écarté par le filtre de date à cause d'un avenant dans `excluded_by_amendment` : **jamais écarté en silence**. Chaque résultat porte `amends` / `amended_by` et `warnings` (SIREN invalide, terme modifié…) ; un contrat prorogé cite aussi l'article de durée de l'avenant. Le tool `get_contract` renvoie le texte par article pour vérifier (avec `amends`, `amended_by`, `warnings`).
+5. **Doublons** (`dataroom/duplicates.py`, tool `find_duplicates`, paramètre optionnel `entity_ids`) : regroupement par jeu de parties, comparaisons seulement dans chaque groupe. Paire signalée si (même type et même date de signature ou de fin en métadonnées, avant avenants) ou texte quasi identique (Jaccard sur les mots ≥ 0,8) ; jamais un contrat et son avenant. Sortie : paires avec `reasons` et `text_similarity`, les plus ressemblantes d'abord ; l'agent conclut.
 
 Positionnement : c'est un **RAG agentique hybride**. Le chemin `query` est du RAG (retrieval BM25) ; le chemin `filters` est une requête structurée construite par le LLM (self-query), pas du RAG. Le RAG classique (top-k) échoue sur ce type de questions : exhaustivité, filtres, comparaison entre documents.
 
@@ -54,8 +56,9 @@ Positionnement : c'est un **RAG agentique hybride**. Le chemin `query` est du RA
 │   ├── models.py           entrée/sortie du tool (valeurs des filtres : tirées de la data room)
 │   ├── loader.py           chargement du JSON + normalisation (identifiants d'entités, dates, SIREN)
 │   ├── indexer.py          découpage par article, tokenisation, BM25, DataRoomIndex (entités, types, lois, avenants)
-│   ├── search.py           filtres (match / exclu / inconnu), valeurs inconnues rejetées, classement, articles
-│   ├── tools.py            get_contract, tool_definitions() (format API Claude, schéma aplati, valeurs injectées), run_tool()
+│   ├── search.py           filtres (match / exclu / inconnu), valeurs inconnues rejetées, classement, articles, pagination
+│   ├── duplicates.py       find_duplicates : doublons probables par jeu de parties (type + date, ou texte quasi identique)
+│   ├── tools.py            get_contract, TOOLS (3 tools), tool_definitions() (format API Claude, schéma aplati, valeurs injectées), run_tool()
 │   ├── agent.py            boucle tool-use avec Ollama + CLI
 │   ├── api.py              FastAPI : GET /tools, POST /tools/search_data_room, /tools/get_contract, /ask
 │   └── mcp_server.py       serveur MCP : stdio, ou Streamable HTTP sur /mcp (jeton Bearer hors localhost)
@@ -98,14 +101,14 @@ Environnement : Python 3.14 (`.venv`), projet installé en éditable. Ollama 0.3
 | Brenalis (`groupe_brenalis`), fin avant fin 2026 | c04 | `excluded_unknown` : c08, c17 ; `excluded_by_amendment` : c09 (reporté au 2028-06-30 par c18) ; c12 (Brénalys) exclu |
 | Droit étranger | c05 (new-yorkais), c16 (suisse), c20 (traduction de c05) | c10 (loi non renseignée) |
 | « exclusivité territoriale » / « franchise » | c03 (ARTICLE 4) / c13 (typé « licence ») | — |
+| Doublons (`find_duplicates`) | {c11, c19} (Jaccard 1,0), {c05, c20} (traduction, Jaccard 0,15 : repérée par type + dates) | c08/c14 (même jour, actes différents) et c09/c18 (avenant) non signalés |
 
 ## Pièges connus du jeu fictif
 
-Traité : c09, terme reporté au 2028-06-30 par l'avenant c18 (`excluded_by_amendment` pour « fin avant fin 2026 »).
+Traités : c09, terme reporté au 2028-06-30 par l'avenant c18 (`excluded_by_amendment` pour « fin avant fin 2026 ») ; doublons {c11, c19} (même convention téléversée deux fois) et {c05, c20} (contrat en anglais et sa traduction de courtoisie), trouvés par `find_duplicates`.
 
 Non traités pour l'instant :
 
-- Doublons {c11, c19} (même convention téléversée deux fois) et {c05, c20} (contrat en anglais et sa traduction de courtoisie).
 - c15 : fin 2027-03-31 dans les métadonnées, 30/09/2026 dans le texte ; c13 est une franchise typée « contrat de licence ».
 - c10 sans loi applicable ; SIREN « en cours » (c13) ; c08 (cession) et c14 (garantie) signés le même jour par les mêmes parties, sans être des doublons ; entités distinctes à noms proches : Groupe Brenalis / Brénalys Advisory, Cabinet Morand / M. Étienne Morand, Foncière Verdane / Comptoir Verdane.
 
@@ -116,7 +119,7 @@ Non traités pour l'instant :
 
 ## Limites et prochaines étapes
 
-- Pas de tool pour « Y a-t-il des doublons ? » : sur 20 contrats, l'agent peut trouver les paires en demandant la liste complète (filtres vides), ce qui ne passe pas à l'échelle.
+- Doublons : parties exactement identiques exigées (une partie écrite autrement casse le regroupement) ; une traduction n'est vue que par ses métadonnées ; pas de détection des versions successives à dates différentes.
 - Avenants : seul le report de terme est appliqué (pas les autres modifications) ; rattachement par règle simple, pas de résolution quand l'avenant ne cite pas la date du contrat et que plusieurs contrats sont possibles.
 - Bruit sur les requêtes texte : le préfixe titre/type fait matcher des contrats dont seul le titre correspond ; pas de seuil de pertinence (piste : couper sous ~40 % du meilleur score).
 - Recherche lexicale seulement : une reformulation sans les mots du contrat ne trouve rien → embeddings + RRF.

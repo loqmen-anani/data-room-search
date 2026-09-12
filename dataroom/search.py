@@ -96,7 +96,7 @@ def _hit(chunk: Chunk, score: float | None) -> ArticleHit:
                       score=None if score is None else round(score, 3))
 
 
-def _check_known(label: str, values: list[str] | None, known: set[str]) -> None:
+def check_known(label: str, values: list[str] | None, known: set[str]) -> None:
     """Une valeur absente de la data room est une erreur (faute de frappe, entité inexistante), pas un filtre vide."""
     unknown = sorted(set(values or ()) - known)
     if unknown:
@@ -105,10 +105,10 @@ def _check_known(label: str, values: list[str] | None, known: set[str]) -> None:
 
 def search(index: DataRoomIndex, req: SearchRequest) -> SearchResponse:
     f = req.filters
-    _check_known("entity_ids", f.entity_ids, index.entities)
-    _check_known("contract_types", f.contract_types, index.contract_types)
+    check_known("entity_ids", f.entity_ids, index.entities)
+    check_known("contract_types", f.contract_types, index.contract_types)
     if f.governing_law:
-        _check_known("governing_law", (f.governing_law.in_ or []) + (f.governing_law.not_in or []), index.laws)
+        check_known("governing_law", (f.governing_law.in_ or []) + (f.governing_law.not_in or []), index.laws)
     query_tokens = tokenize(req.query) if req.query else []
     if req.query and not query_tokens:
         raise ValueError(f"query sans terme recherchable (mots vides seulement) : {req.query!r}. "
@@ -162,8 +162,11 @@ def search(index: DataRoomIndex, req: SearchRequest) -> SearchResponse:
             score=score,
         ))
 
-    # 4. Sans query : tous les candidats (exhaustif). Avec query : top_k par pertinence.
+    # 4. Avec query : classement par pertinence. Puis une page de `limit` résultats à partir de `offset` : rien n'est
+    # coupé par un top-k, l'agent sait s'il en reste (`next_offset`).
     if query_tokens:
-        results = sorted(results, key=lambda r: r.score, reverse=True)[: req.top_k]
-    return SearchResponse(total_candidates=len(candidates), excluded_unknown=excluded_unknown,
-                          excluded_by_amendment=excluded_by_amendment, results=results)
+        results.sort(key=lambda r: r.score, reverse=True)
+    end = req.offset + req.limit
+    return SearchResponse(total_candidates=len(candidates), total_results=len(results),
+                          next_offset=end if end < len(results) else None, excluded_unknown=excluded_unknown,
+                          excluded_by_amendment=excluded_by_amendment, results=results[req.offset:end])

@@ -25,7 +25,7 @@ def rpc(method, params=None):
 @pytest.mark.anyio
 async def test_list_and_call_tools():
     async with Client(server) as client:
-        assert [t.name for t in (await client.list_tools()).tools] == ["search_data_room", "get_contract"]
+        assert [t.name for t in (await client.list_tools()).tools] == ["search_data_room", "get_contract", "find_duplicates"]
         result = await client.call_tool("search_data_room", FOREIGN_LAW)
     assert not result.is_error
     assert [r["contract_id"] for r in result.structured_content["results"]] == ["c05", "c16", "c20"]

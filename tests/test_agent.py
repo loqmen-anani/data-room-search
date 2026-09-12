@@ -55,6 +55,8 @@ def test_summarize_result_mentions_amendments():
                          "excluded_by_amendment": {"c09": "fin 2026-06-30 → 2028-06-30 (avenant c18)"}})
     assert agent.summarize_result(result) == "1 résultat(s) : ['c04'], inconnus : ['c08'], écartés par un avenant : ['c09']"
     assert agent.summarize_result(json.dumps({"error": "x"})) == "erreur : x"
+    pairs = json.dumps({"contracts_compared": 20, "pairs": [{"contract_ids": ["c11", "c19"]}]})
+    assert agent.summarize_result(pairs) == "1 paire(s) de doublons : [['c11', 'c19']]"
 
 
 def test_ollama_tools_format():

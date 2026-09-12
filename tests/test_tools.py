@@ -5,7 +5,7 @@ from dataroom.tools import run_tool, tool_definitions
 
 def test_tool_definitions_are_flat_with_data_room_values():
     definitions = tool_definitions()
-    assert [t["name"] for t in definitions] == ["search_data_room", "get_contract"]
+    assert [t["name"] for t in definitions] == ["search_data_room", "get_contract", "find_duplicates"]
     schemas = json.dumps([t["input_schema"] for t in definitions])
     assert "$ref" not in schemas and "anyOf" not in schemas
     filters = definitions[0]["input_schema"]["properties"]["filters"]["properties"]
@@ -13,6 +13,12 @@ def test_tool_definitions_are_flat_with_data_room_values():
     assert filters["governing_law"]["properties"]["not_in"]["items"]["enum"] == [
         "droit français", "droit new-yorkais", "droit suisse",
     ]
+    assert "groupe_brenalis" in definitions[2]["input_schema"]["properties"]["entity_ids"]["items"]["enum"]
+
+
+def test_run_tool_find_duplicates():
+    out = json.loads(run_tool("find_duplicates", {}))
+    assert sorted(p["contract_ids"] for p in out["pairs"]) == [["c05", "c20"], ["c11", "c19"]]
 
 
 def test_run_tool_get_contract():

@@ -37,10 +37,12 @@ DEFAULT_PATH = "/mcp"
 
 INSTRUCTIONS = (
     "Data room de contrats. search_data_room : sans `query`, renvoie TOUS les contrats qui passent les filtres "
-    "(réponse exhaustive) ; avec `query`, classe les articles par pertinence. Dates au format YYYY-MM-DD. "
+    "(réponse exhaustive) ; avec `query`, classe les articles par pertinence. Réponse par pages : si `next_offset` "
+    "n'est pas nul, rappelez le tool avec `offset` = `next_offset`. Dates au format YYYY-MM-DD. "
     "Les contrats listés dans `excluded_unknown` ont un champ filtré vide, ceux de `excluded_by_amendment` un terme "
     "modifié par un avenant : signalez-les. "
-    "get_contract renvoie le texte d'un contrat par article, pour citer la source."
+    "get_contract renvoie le texte d'un contrat par article, pour citer la source. "
+    "find_duplicates renvoie les paires de doublons probables avec leurs raisons."
 )
 
 

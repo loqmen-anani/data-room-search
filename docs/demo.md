@@ -1,6 +1,6 @@
 # Démo de bout en bout
 
-Générée le 2026-09-12 22:15 par `python scripts/demo.py`, data room `exemple_data_room.json`, modèle `huihui_ai/qwen3.5-abliterated:27b` (Ollama).
+Générée le 2026-09-12 22:54 par `python scripts/demo.py`, data room `exemple_data_room.json`, modèle `huihui_ai/qwen3.5-abliterated:27b` (Ollama).
 Pour chaque question : les appels de tools choisis par l'agent, puis sa réponse.
 
 ## Quels contrats avec le Groupe Brenalis expirent avant fin 2026 ?
@@ -27,11 +27,11 @@ Pour chaque question : les appels de tools choisis par l'agent, puis sa réponse
 >     *   **Date de fin :** 2026-11-30
 >     *   **Justification :** L'article 2 stipule que la mission s'achève au plus tard le 30 novembre 2026.
 >
-> **Notes sur les autres contrats :**
-> *   **c08** et **c17** : Leur situation ne peut pas être déterminée (données inconnues).
-> *   **c09** : Initialement prévu pour expirer le 30 juin 2026, son terme a été reporté au 30 juin 2028 par l'avenant c18.
+> **Notes sur les contrats exclus :**
+> *   **c08** et **c17** : Leur situation ne peut pas être déterminée (excluded_unknown).
+> *   **c09** : Initialement prévu pour fin 2026, son terme a été reporté au 30 juin 2028 par l'avenant c18.
 
-_1 appel(s) de tool · 79.5 s_
+_1 appel(s) de tool · 58.1 s_
 
 ## Lesquels sont régis par un droit étranger ?
 
@@ -50,42 +50,50 @@ _1 appel(s) de tool · 79.5 s_
 
 **Réponse de l'agent**
 
-> Les contrats régis par un droit étranger sont les suivants :
+> Voici les contrats régis par un droit étranger :
 >
-> *   **c05** – *Software License Agreement — Northbeam Analytics / Hydrelle Énergie* : régi par le **droit new-yorkais** (Article 8).
-> *   **c16** – *Contrat d'agence commerciale — Atelier Corvel / Heldin SA (Suisse romande)* : régi par le **droit suisse** (Article 9).
-> *   **c20** – *Traduction de courtoisie — Contrat de licence de logiciel Northbeam Analytics / Hydrelle Énergie* : régi par le **droit new-yorkais** (Article 8).
+> 1.  **Software License Agreement — Northbeam Analytics / Hydrelle Énergie** (c05)
+>     *   **Droit applicable :** Droit new-yorkais.
+>     *   **Justification :** Article 8 stipulant que l'accord est régi par les lois de l'État de New York.
 >
-> **Note :** Le contrat **c10** est exclu de cette liste car sa situation ne peut pas être déterminée (données manquantes sur la loi applicable).
+> 2.  **Contrat d'agence commerciale — Atelier Corvel / Heldin SA (Suisse romande)** (c16)
+>     *   **Droit applicable :** Droit suisse.
+>     *   **Justification :** Article 9 précisant que le contrat est soumis au droit suisse, notamment aux articles 418a et suivants du Code des obligations.
+>
+> 3.  **Traduction de courtoisie — Contrat de licence de logiciel Northbeam Analytics / Hydrelle Énergie** (c20)
+>     *   **Droit applicable :** Droit new-yorkais.
+>     *   **Justification :** Article 8 indiquant que le contrat est régi par le droit de l'État de New York.
+>
+> *Note : Le contrat c10 est exclu de cette liste car sa situation ne peut pas être déterminée (excluded_unknown).*
 
-_1 appel(s) de tool · 54.5 s_
+_1 appel(s) de tool · 66.1 s_
 
 ## Y a-t-il des doublons ?
 
-**Appel** `search_data_room` → 20 résultat(s) : ['c01', 'c02', 'c03', 'c04', 'c05', 'c06', 'c07', 'c08', 'c09', 'c10', 'c11', 'c12', 'c13', 'c14', 'c15', 'c16', 'c17', 'c18', 'c19', 'c20'], inconnus : []
+**Appel** `find_duplicates` → 2 paire(s) de doublons : [['c11', 'c19'], ['c05', 'c20']]
 ```json
-{
-  "filters": {}
-}
+{}
 ```
 
 **Réponse de l'agent**
 
-> Oui, il y a des doublons dans la data room. Voici les contrats identifiés comme tels :
+> Oui, deux paires de contrats en doublon ont été identifiées :
 >
-> 1.  **Doublon de contrat de prestation de services (Convention d'honoraires)**
->     *   **c11** : *Convention d'honoraires — Kessler Aubry Avocats / Soravie Santé*
->     *   **c19** : *Convention d'honoraires Kessler Aubry / Soravie*
->     *   **Justification** : Ces deux contrats concernent les mêmes parties (Kessler Aubry Avocats et Soravie Santé), le même type de contrat (prestation de services), et partagent la même date de signature (2024-04-15) et la même date de fin (2027-04-14). Le nom du fichier de c19 inclut "(1)", suggérant une duplication.
+> 1. **Paire 1 (Doublon certain)**
+>    - **Contrats** :
+>      - `c11` : *Convention d'honoraires — Kessler Aubry Avocats / Soravie Santé*
+>      - `c19` : *Convention d'honoraires Kessler Aubry / Soravie*
+>    - **Raisons** : Mêmes parties, même type de contrat (prestation de services), mêmes dates de signature (2024-04-15) et de fin (2027-04-14).
+>    - **Similarité** : Le texte est identique à 100 %. Il s'agit très probablement d'une duplication de fichier.
 >
-> 2.  **Doublon de contrat de licence (Traduction)**
->     *   **c05** : *Software License Agreement — Northbeam Analytics / Hydrelle Énergie*
->     *   **c20** : *Traduction de courtoisie — Contrat de licence de logiciel Northbeam Analytics / Hydrelle Énergie*
->     *   **Justification** : Ces deux contrats impliquent les mêmes parties (Northbeam Analytics et Hydrelle Énergie), sont du même type (contrat de licence), et ont les mêmes dates de signature (2024-10-01) et de fin (2027-09-30). Le titre de c20 indique qu'il s'agit d'une "Traduction de courtoisie" du contrat c05.
->
-> Aucun autre doublon n'a été identifié parmi les 20 contrats répertoriés.
+> 2. **Paire 2 (Doublon probable - Traduction)**
+>    - **Contrats** :
+>      - `c05` : *Software License Agreement — Northbeam Analytics / Hydrelle Énergie*
+>      - `c20` : *Traduction de courtoisie — Contrat de licence de logiciel Northbeam Analytics / Hydrelle Énergie*
+>    - **Raisons** : Mêmes parties, même type de contrat (contrat de licence), mêmes dates de signature (2024-10-01) et de fin (2027-09-30).
+>    - **Similarité** : La similarité textuelle est de 15 %, ce qui suggère qu'il s'agit d'une version originale et de sa traduction (comme indiqué dans le titre de c20).
 
-_1 appel(s) de tool · 122.9 s_
+_1 appel(s) de tool · 71.2 s_
 
 ## Un changement de contrôle du Groupe Brenalis aurait-il des conséquences sur ses contrats ?
 
@@ -108,6 +116,6 @@ _1 appel(s) de tool · 122.9 s_
 > *   **Contrat de crédit — Banque Orsenne / Groupe Brenalis (c01)**
 >     *   **Article 8 — Changement de contrôle** : Si un actionnaire (ou plusieurs agissant de concert) prend le contrôle du Groupe Brenalis, la Banque Orsenne pourra exiger le **remboursement immédiat de l'encours**, sauf si elle y renonce par écrit dans les trente jours.
 >
-> Aucun autre contrat n'a été identifié comme contenant une clause spécifique sur le changement de contrôle pour le Groupe Brenalis dans cette recherche.
+> Ce contrat est régi par le droit français et est en vigueur jusqu'au 2031-01-20.
 
-_1 appel(s) de tool · 43.7 s_
+_1 appel(s) de tool · 46.4 s_

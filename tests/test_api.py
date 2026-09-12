@@ -20,6 +20,12 @@ def test_search_endpoint(client):
     assert list(resp.json()["excluded_by_amendment"]) == ["c09"]
 
 
+def test_find_duplicates_endpoint(client):
+    resp = client.post("/tools/find_duplicates", json={"entity_ids": ["kessler_aubry_avocats"]})
+    assert resp.status_code == 200
+    assert [p["contract_ids"] for p in resp.json()["pairs"]] == [["c11", "c19"]]
+
+
 def test_errors(client):
     assert client.post("/tools/get_contract", json={"contract_id": "c99"}).status_code == 404
     unknown = client.post("/tools/search_data_room", json={"filters": {"entity_ids": ["brenaliss"]}})

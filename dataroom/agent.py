@@ -23,6 +23,8 @@ Règles :
 - Convertis toute date relative (« fin 2026 », « l'an prochain ») en date absolue YYYY-MM-DD avant d'appeler un tool.
 - Pour une question de liste (« quels contrats », « lesquels »), utilise les filtres sans query : la réponse est exhaustive.
 - Pour une question sur le contenu des clauses, utilise `query`, éventuellement avec des filtres.
+- Si `next_offset` n'est pas nul, la réponse est incomplète : rappelle le tool avec `offset` = `next_offset`.
+- Pour « y a-t-il des doublons ? », utilise `find_duplicates` : il renvoie les paires probables avec leurs raisons.
 - Cite chaque contrat par son titre et son identifiant (ex. c07), avec l'article qui justifie la réponse.
 - Si `excluded_unknown` n'est pas vide, signale ces contrats : leur situation ne peut pas être déterminée.
 - Si `excluded_by_amendment` n'est pas vide, signale ces contrats : un avenant a modifié leur terme.
@@ -106,6 +108,8 @@ def summarize_result(result: str) -> str:
         if data.get("excluded_by_amendment"):
             summary += f", écartés par un avenant : {list(data['excluded_by_amendment'])}"
         return summary
+    if "pairs" in data:
+        return f"{len(data['pairs'])} paire(s) de doublons : {[p['contract_ids'] for p in data['pairs']]}"
     return f"{data.get('contract_id')} : {len(data.get('articles', []))} article(s)"
 
 

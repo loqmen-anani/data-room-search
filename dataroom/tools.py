@@ -4,8 +4,9 @@ from functools import cache
 
 from pydantic import BaseModel, Field
 
+from dataroom.duplicates import find_duplicates
 from dataroom.indexer import DataRoomIndex
-from dataroom.models import Chunk, SearchRequest
+from dataroom.models import Chunk, FindDuplicates, SearchRequest
 from dataroom.search import search
 
 
@@ -47,6 +48,7 @@ def get_contract(params: GetContract) -> ContractText:
 TOOLS = {
     "search_data_room": (SearchRequest, lambda req: search(get_index(), req)),
     "get_contract": (GetContract, get_contract),
+    "find_duplicates": (FindDuplicates, lambda params: find_duplicates(get_index(), params)),
 }
 
 
@@ -71,13 +73,17 @@ def _simplify(node, defs: dict):
 
 
 def _inject_enums(schema: dict) -> dict:
-    """Ajoute au schéma de search_data_room les valeurs présentes dans la data room (entités, types, lois)."""
+    """Ajoute au schéma les valeurs présentes dans la data room (entités, types, lois), là où un tool les attend."""
     index = get_index()
-    filters = schema["properties"]["filters"]["properties"]
-    filters["entity_ids"]["items"]["enum"] = sorted(index.entities)
-    filters["contract_types"]["items"]["enum"] = sorted(index.contract_types)
-    for key in ("in", "not_in"):
-        filters["governing_law"]["properties"][key]["items"]["enum"] = sorted(index.laws)
+    props = schema["properties"]
+    if "filters" in props:
+        filters = props["filters"]["properties"]
+        filters["entity_ids"]["items"]["enum"] = sorted(index.entities)
+        filters["contract_types"]["items"]["enum"] = sorted(index.contract_types)
+        for key in ("in", "not_in"):
+            filters["governing_law"]["properties"][key]["items"]["enum"] = sorted(index.laws)
+    if "entity_ids" in props:
+        props["entity_ids"]["items"]["enum"] = sorted(index.entities)
     return schema
 
 
@@ -88,8 +94,7 @@ def tool_definitions() -> list[dict]:
         schema = model.model_json_schema()
         schema = _simplify(schema, schema.get("$defs", {}))
         schema.pop("description", None)  # doublon de la description du tool
-        if model is SearchRequest:
-            schema = _inject_enums(schema)
+        schema = _inject_enums(schema)
         definitions.append({"name": name, "description": model.__doc__.strip(), "input_schema": schema})
     return definitions
 

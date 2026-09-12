@@ -83,7 +83,17 @@ def test_query_with_only_stopwords_is_an_error(index):
         search(index, SearchRequest(query="le la de"))
 
 
-def test_top_k(index):
-    resp = search(index, SearchRequest(query="durée", top_k=3))
-    assert len(resp.results) == 3
-    assert [r.score for r in resp.results] == sorted((r.score for r in resp.results), reverse=True)
+def test_pagination_with_query(index):
+    first = search(index, SearchRequest(query="durée", limit=3))
+    assert len(first.results) == 3 and first.next_offset == 3 and first.total_results > 3
+    assert [r.score for r in first.results] == sorted((r.score for r in first.results), reverse=True)
+    second = search(index, SearchRequest(query="durée", limit=3, offset=3))
+    assert not {r.contract_id for r in first.results} & {r.contract_id for r in second.results}
+
+
+def test_pagination_without_query_keeps_every_contract(index):
+    page = search(index, SearchRequest(limit=15))
+    assert [r.contract_id for r in page.results] == [f"c{i:02d}" for i in range(1, 16)]
+    assert (page.total_results, page.next_offset) == (20, 15)
+    rest = search(index, SearchRequest(limit=15, offset=15))
+    assert [r.contract_id for r in rest.results] == ["c16", "c17", "c18", "c19", "c20"] and rest.next_offset is None
