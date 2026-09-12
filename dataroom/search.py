@@ -1,8 +1,7 @@
 import re
-import unicodedata
 from datetime import date
 
-from dataroom.indexer import DataRoomIndex, tokenize
+from dataroom.indexer import DURATION_HEADING, DataRoomIndex, plain, tokenize
 from dataroom.models import (
     ArticleHit, Chunk, Contract, ContractHit, DateRange, Filters, SearchRequest, SearchResponse,
 )
@@ -10,15 +9,20 @@ from dataroom.models import (
 MAX_ARTICLES_PER_CONTRACT = 3
 EXCERPT_CHARS = 400
 
-# Quand un filtre porte sur un champ, l'article qui le justifie est remonté même sans query.
-FIELD_ARTICLES = {
-    "date": re.compile(r"DUREE|PROROGATION|TERM"),
-    "law": re.compile(r"LOI APPLICABLE|GOVERNING LAW|JURIDICTION"),
-}
+# Quand un filtre porte sur un champ, l'article qui le justifie est remonté même sans query (DURATION_HEADING pour les dates).
+LAW_HEADING = re.compile(r"LOI APPLICABLE|GOVERNING LAW|JURIDICTION")
 
 
 class Unknown(Exception):
     """Le champ filtré est vide sur ce contrat : on ne peut ni l'inclure ni l'exclure."""
+
+
+def _active(rng: DateRange | None) -> bool:
+    return rng is not None and (rng.after is not None or rng.before is not None)
+
+
+def _law_active(f: Filters) -> bool:
+    return f.governing_law is not None and bool(f.governing_law.in_ or f.governing_law.not_in)
 
 
 def _check_range(label: str, value: date | None, rng: DateRange) -> str | None:
@@ -42,7 +46,7 @@ def apply_filters(c: Contract, f: Filters) -> list[str] | None:
         if c.contract_type not in f.contract_types:
             return None
         matched.append(f"type: {c.contract_type}")
-    if f.governing_law and (f.governing_law.in_ or f.governing_law.not_in):
+    if _law_active(f):
         if c.governing_law is None:
             raise Unknown
         if f.governing_law.in_ and c.governing_law not in f.governing_law.in_:
@@ -51,7 +55,7 @@ def apply_filters(c: Contract, f: Filters) -> list[str] | None:
             return None
         matched.append(f"loi applicable: {c.governing_law}")
     for label, value, rng in (("signature", c.signature_date, f.signature_date), ("fin", c.end_date, f.end_date)):
-        if rng is None or (rng.after is None and rng.before is None):
+        if not _active(rng):
             continue
         desc = _check_range(label, value, rng)
         if desc is None:
@@ -60,17 +64,23 @@ def apply_filters(c: Contract, f: Filters) -> list[str] | None:
     return matched
 
 
-def _plain(s: str) -> str:
-    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().upper()
+def _excluded_by_amendment(c: Contract, f: Filters) -> bool:
+    """Exclu, mais passerait (ou serait indéterminé) avec sa date de fin d'origine : c'est un avenant qui l'écarte."""
+    if c.end_date == c.initial_end_date or not _active(f.end_date):
+        return False
+    try:
+        return apply_filters(c.model_copy(update={"end_date": c.initial_end_date}), f) is not None
+    except Unknown:
+        return True
 
 
-def _filter_articles(chunks: list[Chunk], f: Filters) -> list[Chunk]:
-    wanted = []
-    if f.signature_date or f.end_date:
-        wanted.append(FIELD_ARTICLES["date"])
-    if f.governing_law:
-        wanted.append(FIELD_ARTICLES["law"])
-    return [ch for ch in chunks if any(p.search(_plain(ch.heading)) for p in wanted)]
+def _filter_articles(index: DataRoomIndex, c: Contract, f: Filters) -> list[Chunk]:
+    """Articles qui justifient les filtres : DURÉE (y compris celle des avenants du contrat), LOI APPLICABLE."""
+    dates = _active(f.signature_date) or _active(f.end_date)
+    wanted = [p for p, on in ((DURATION_HEADING, dates), (LAW_HEADING, _law_active(f))) if on]
+    own = [ch for ch in index.contract_chunks(c.contract_id) if any(p.search(plain(ch.heading)) for p in wanted)]
+    amending = [ch for a in c.amended_by for ch in index.contract_chunks(a) if DURATION_HEADING.search(plain(ch.heading))]
+    return own + (amending if dates else [])
 
 
 def _hit(chunk: Chunk, score: float | None) -> ArticleHit:
@@ -92,24 +102,31 @@ def search(index: DataRoomIndex, req: SearchRequest) -> SearchResponse:
     _check_known("contract_types", f.contract_types, index.contract_types)
     if f.governing_law:
         _check_known("governing_law", (f.governing_law.in_ or []) + (f.governing_law.not_in or []), index.laws)
+    query_tokens = tokenize(req.query) if req.query else []
+    if req.query and not query_tokens:
+        raise ValueError(f"query sans terme recherchable (mots vides seulement) : {req.query!r}. "
+                         "Reformuler avec des mots du contrat, ou omettre la query.")
 
     # 1. Pré-filtrage sur les métadonnées
     candidates: list[tuple[Contract, list[str]]] = []
     excluded_unknown = []
+    excluded_by_amendment = {}
     for c in index.contracts.values():
         try:
-            matched = apply_filters(c, req.filters)
+            matched = apply_filters(c, f)
         except Unknown:
             excluded_unknown.append(c.contract_id)
             continue
         if matched is not None:
             candidates.append((c, matched))
+        elif _excluded_by_amendment(c, f):
+            excluded_by_amendment[c.contract_id] = (
+                f"fin {c.initial_end_date or 'non renseignée'} → {c.end_date} (avenant {', '.join(c.amended_by)})"
+            )
 
-    query_tokens = tokenize(req.query) if req.query else []
     results = []
     for c, matched in candidates:
         chunk_idxs = index.chunks_by_contract.get(c.contract_id, [])
-        chunks = [index.chunks[i] for i in chunk_idxs]
 
         # 2. Classement BM25 des articles du contrat (uniquement si query)
         articles: list[ArticleHit] = []
@@ -125,11 +142,14 @@ def search(index: DataRoomIndex, req: SearchRequest) -> SearchResponse:
 
         # 3. Articles justifiant les filtres (DURÉE, LOI APPLICABLE…)
         seen = {a.chunk_id for a in articles}
-        articles += [_hit(ch, None) for ch in _filter_articles(chunks, req.filters) if ch.chunk_id not in seen]
+        articles += [_hit(ch, None) for ch in _filter_articles(index, c, f) if ch.chunk_id not in seen]
 
         results.append(ContractHit(
             **c.model_dump(include={"contract_id", "filename", "title", "parties", "contract_type",
                                     "signature_date", "end_date", "governing_law"}),
+            amends=c.amends or None,
+            amended_by=c.amended_by or None,
+            warnings=c.warnings or None,
             matched_filters=matched,
             relevant_articles=articles,
             score=score,
@@ -138,4 +158,5 @@ def search(index: DataRoomIndex, req: SearchRequest) -> SearchResponse:
     # 4. Sans query : tous les candidats (exhaustif). Avec query : top_k par pertinence.
     if query_tokens:
         results = sorted(results, key=lambda r: r.score, reverse=True)[: req.top_k]
-    return SearchResponse(total_candidates=len(candidates), excluded_unknown=excluded_unknown, results=results)
+    return SearchResponse(total_candidates=len(candidates), excluded_unknown=excluded_unknown,
+                          excluded_by_amendment=excluded_by_amendment, results=results)

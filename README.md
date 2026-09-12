@@ -4,6 +4,21 @@ Un **tool** qu'un agent LLM appelle pour répondre aux questions d'un avocat sur
 
 Le repo est livré avec une data room **fictive** de 20 contrats (voir [Données](#données)) ; une vraie en contiendrait des milliers.
 
+## Le tool en une fonction
+
+Le tool est une fonction Python. L'orchestrateur de l'agent lui passe le nom du tool et les arguments choisis par le LLM ; elle renvoie une chaîne JSON, que l'orchestrateur ajoute au contexte du LLM avant de le relancer.
+
+```python
+from dataroom.tools import run_tool, tool_definitions
+
+tool_definitions()  # nom, description et schéma des arguments : ce que le LLM voit
+run_tool("search_data_room", {"filters": {"entity_ids": ["groupe_brenalis"], "end_date": {"before": "2026-12-31"}}})
+# '{"total_candidates": 1, "excluded_unknown": ["c08", "c17"],
+#   "excluded_by_amendment": {"c09": "fin 2026-06-30 → 2028-06-30 (avenant c18)"}, "results": [{"contract_id": "c04", …}]}'
+```
+
+Le reste expose ou appelle cette même fonction : serveur MCP, API REST, et un agent minimal ([`dataroom/agent.py`](dataroom/agent.py)) qui montre la boucle de l'orchestrateur : appel du LLM, exécution du tool demandé, résultat renvoyé au LLM, jusqu'à la réponse finale.
+
 ## Démarrage rapide
 
 Prérequis : Python ≥ 3.10.
@@ -12,7 +27,7 @@ Prérequis : Python ≥ 3.10.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                    # 31 tests, sans LLM (serveur MCP compris)
+pytest                                    # 37 tests, sans LLM (serveur MCP compris)
 python -m dataroom.indexer                # 20 contrats, 106 articles indexés
 bash scripts/run_query.sh "exclusivité territoriale"          # le tool seul, sortie JSON
 
@@ -121,18 +136,19 @@ flowchart LR
 }
 ```
 
-**2. Indexation.** Chaque contrat est découpé par article (`ARTICLE n — TITRE`). Le titre, les parties et le type du contrat sont indexés avec chaque article, pour qu'un article isolé reste compréhensible. Index BM25 en mémoire (quelques millisecondes à construire).
+**2. Indexation.** Chaque contrat est découpé par article (`ARTICLE n — TITRE`). Le titre, les parties et le type du contrat sont indexés avec chaque article, pour qu'un article isolé reste compréhensible. Index BM25 en mémoire (quelques millisecondes à construire). Chaque avenant est rattaché au contrat qu'il modifie (mêmes parties, date de signature du contrat citée dans l'avenant) : s'il reporte le terme, la date de fin du contrat est mise à jour.
 
 **3. Recherche.** Filtrage sur les métadonnées, puis deux cas :
 - sans `query` → **tous** les contrats qui passent les filtres : une question « lesquels ? » exige une réponse exhaustive ;
 - avec `query` → classement BM25 des articles ; le score d'un contrat est celui de son meilleur article.
 
-**4. Sortie.** Pour chaque contrat : les filtres satisfaits et les articles qui justifient le résultat, que l'agent cite. Un contrat dont le champ filtré est vide n'est **jamais écarté en silence** : il est listé dans `excluded_unknown`.
+**4. Sortie.** Pour chaque contrat : les filtres satisfaits et les articles qui justifient le résultat, que l'agent cite. Un contrat n'est **jamais écarté en silence** : s'il manque le champ filtré, il est listé dans `excluded_unknown` ; si c'est un avenant qui l'écarte du filtre de date, dans `excluded_by_amendment`. Chaque résultat porte aussi ses avenants (`amends`, `amended_by`) et ses avertissements (`warnings` : SIREN invalide, terme modifié…).
 
 ```json
 {
-  "total_candidates": 2,
+  "total_candidates": 1,
   "excluded_unknown": ["c08", "c17"],
+  "excluded_by_amendment": {"c09": "fin 2026-06-30 → 2028-06-30 (avenant c18)"},
   "results": [{
     "contract_id": "c04",
     "title": "Lettre de mission d'audit d'acquisition — Cabinet Morand / Groupe Brenalis",
@@ -160,7 +176,7 @@ flowchart LR
 
 | Question | Réponse du tool | Signalés à part |
 |---|---|---|
-| Contrats Brenalis qui expirent avant fin 2026 | c04, c09 (article DURÉE) | c08, c17 : pas de date de fin ; c12 (Brénalys Advisory) exclu |
+| Contrats Brenalis qui expirent avant fin 2026 | c04 (article DURÉE) | c08, c17 : pas de date de fin ; c09 : terme reporté au 30/06/2028 par l'avenant c18 ; c12 (Brénalys Advisory) exclu |
 | Contrats régis par un droit étranger | c05 (new-yorkais) et c20, sa traduction de courtoisie ; c16 (suisse) | c10 : loi non renseignée |
 | « exclusivité territoriale » | c03, ARTICLE 4 — EXCLUSIVITÉ | — |
 | « franchise » | c13, alors que ses métadonnées le typent « contrat de licence » | — |
@@ -169,7 +185,7 @@ Trace complète de l'agent sur les questions types : [`docs/demo.md`](docs/demo.
 
 ## Limites connues
 
-- **c09 est un faux positif** pour Brenalis : l'avenant c18 reporte son terme au 30/06/2028. Le lien avenant → contrat n'est pas modélisé.
+- **Avenants rattachés par une règle simple.** Seul le report de terme est appliqué, pas les autres modifications (prix, parties). Un avenant qui ne cite pas la date du contrat modifié, alors que plusieurs contrats sont possibles, n'est pas rattaché ; il porte alors un avertissement.
 - **Pas de tool dédié aux doublons** ({c11, c19} : la même convention téléversée deux fois ; {c05, c20} : un contrat et sa traduction de courtoisie). L'agent peut les repérer en demandant la liste complète et en comparant parties, types et dates, mais avec des milliers de contrats cette liste ne tiendrait pas dans son contexte : il faut un traitement dédié.
 - **Qualité des données** laissée de côté volontairement : normalisation minimale (dates, SIREN, noms d'entités), pas de détection des contradictions entre métadonnées et texte (c15 : fin au 31/03/2027 dans les métadonnées, au 30/09/2026 dans le texte).
 - **Bruit sur les requêtes texte** : aucun seuil de pertinence, et le préfixe titre/type fait remonter des contrats dont seul le titre correspond.
@@ -177,7 +193,7 @@ Trace complète de l'agent sur les questions types : [`docs/demo.md`](docs/demo.
 
 ## Prochaines étapes
 
-Relier les avenants à leur contrat et ajouter un tool de doublons ; ajouter un seuil de pertinence et les embeddings ; mesurer chaque changement sur un jeu de questions annoté par des juristes.
+Ajouter un tool de doublons ; ajouter un seuil de pertinence et les embeddings ; mesurer chaque changement sur un jeu de questions annoté par des juristes.
 
 ## Structure
 

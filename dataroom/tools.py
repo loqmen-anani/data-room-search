@@ -32,7 +32,7 @@ def get_contract(params: GetContract) -> ContractText:
     contract = index.contracts.get(params.contract_id)
     if contract is None:
         raise KeyError(f"contrat inconnu : {params.contract_id}")
-    chunks = [index.chunks[i] for i in index.chunks_by_contract.get(contract.contract_id, [])]
+    chunks = index.contract_chunks(contract.contract_id)
     if params.chunk_ids:
         chunks = [ch for ch in chunks if ch.chunk_id in params.chunk_ids]
     return ContractText(contract_id=contract.contract_id, title=contract.title, articles=chunks)

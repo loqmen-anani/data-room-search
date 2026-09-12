@@ -4,6 +4,7 @@
 __pycache__/
 .pytest_cache/
 *.egg-info/
+*.swp
 /.env
 # Données réelles et contexte privé : jamais versionnés
 /private/

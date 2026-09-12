@@ -24,10 +24,13 @@ class Contract(BaseModel):
     parties: list[Party]
     contract_type: str
     signature_date: date | None
-    end_date: date | None
+    end_date: date | None  # date de fin en vigueur : tient compte des avenants qui reportent le terme
+    initial_end_date: date | None  # date de fin des métadonnées, avant avenants
     governing_law: str | None
     content: str
     warnings: list[str]
+    amends: list[str] = []  # pour un avenant : les contrats qu'il modifie
+    amended_by: list[str] = []  # les avenants qui modifient ce contrat
 
     @property
     def entity_ids(self) -> set[str]:
@@ -75,6 +78,7 @@ class SearchRequest(BaseModel):
     Sans `query`, renvoie TOUS les contrats qui passent les filtres (réponse exhaustive).
     Avec `query`, classe les contrats par pertinence de leurs articles et renvoie les `top_k` premiers.
     Chaque résultat contient les articles pertinents à citer dans la réponse.
+    Les avenants sont rattachés à leur contrat : la date de fin tient compte des reports de terme.
     """
 
     query: str | None = Field(
@@ -104,6 +108,9 @@ class ContractHit(BaseModel):
     signature_date: date | None
     end_date: date | None
     governing_law: str | None
+    amends: list[str] | None = None
+    amended_by: list[str] | None = None
+    warnings: list[str] | None = None  # SIREN invalide, date illisible, terme modifié par un avenant…
     matched_filters: list[str]
     relevant_articles: list[ArticleHit]
     score: float | None
@@ -112,4 +119,6 @@ class ContractHit(BaseModel):
 class SearchResponse(BaseModel):
     total_candidates: int  # contrats passant les filtres, avant classement par la query
     excluded_unknown: list[str]  # ids écartés parce qu'un champ filtré est vide : à signaler à l'avocat
+    # Contrats qui passeraient le filtre de date sans l'avenant qui a modifié leur terme : id -> explication
+    excluded_by_amendment: dict[str, str]
     results: list[ContractHit]

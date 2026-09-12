@@ -1,4 +1,6 @@
-from dataroom.loader import entity_id, load_contracts, parse_date
+from datetime import date
+
+from dataroom.loader import dates_in_text, entity_id, load_contracts, parse_date
 
 
 def test_entity_id_merges_variants_but_not_lookalikes():
@@ -12,6 +14,11 @@ def test_parse_date_formats():
         assert parse_date(raw).isoformat() == "2021-03-15"
     assert parse_date("15 foo 2021") is None
     assert parse_date(None) is None
+
+
+def test_dates_in_text():
+    text = "Signé le 1er juillet 2023, terme reporté au 30/06/2028 (le 31/02/2026 n'existe pas)."
+    assert dates_in_text(text) == [date(2023, 7, 1), date(2028, 6, 30)]
 
 
 def test_example_data_room_warnings():

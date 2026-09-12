@@ -22,6 +22,9 @@ MOIS = {
     "août": 8, "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12,
 }
 
+# Date citée dans un texte : « 1er juillet 2023 » ou « 30/06/2026 »
+DATE_IN_TEXT = re.compile(rf"(\d{{1,2}})(?:er)?\s+({'|'.join(MOIS)})\s+(\d{{4}})|(\d{{2}})/(\d{{2}})/(\d{{4}})", re.IGNORECASE)
+
 
 def normalize_name(raw: str) -> str:
     s = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode().lower()
@@ -49,6 +52,17 @@ def parse_date(raw: str | None) -> date | None:
         except ValueError:
             pass
     return None
+
+
+def dates_in_text(text: str) -> list[date]:
+    """Dates citées dans un texte, dans l'ordre d'apparition."""
+    dates = []
+    for m in DATE_IN_TEXT.finditer(text):
+        try:
+            dates.append(date(int(m[3]), MOIS[m[2].lower()], int(m[1])) if m[1] else date(int(m[6]), int(m[5]), int(m[4])))
+        except ValueError:  # date impossible (31/02)
+            pass
+    return dates
 
 
 def normalize_siren(raw: str | None) -> str | None:
@@ -84,6 +98,7 @@ def load_contracts(path: Path = DATA_PATH) -> list[Contract]:
             contract_type=c["contract_type"],
             signature_date=signature_date,
             end_date=end_date,
+            initial_end_date=end_date,
             governing_law=c["governing_law"],
             content=c["content"] or "",
             warnings=warnings,

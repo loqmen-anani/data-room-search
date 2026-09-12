@@ -18,10 +18,25 @@ def headings(resp, contract_id):
 def test_entity_contracts_ending_before_end_2026(index):
     resp = search(index, SearchRequest.model_validate(
         {"filters": {"entity_ids": ["groupe_brenalis"], "end_date": {"before": "2026-12-31"}}}))
-    assert ids(resp) == ["c04", "c09"]
+    assert ids(resp) == ["c04"]
     assert "c12" not in ids(resp)  # Brénalys Advisory ≠ Groupe Brenalis
     assert resp.excluded_unknown == ["c08", "c17"]  # cession de parts et CDI : pas de date de fin
+    assert resp.excluded_by_amendment == {"c09": "fin 2026-06-30 → 2028-06-30 (avenant c18)"}
     assert headings(resp, "c04") == ["ARTICLE 2 — DURÉE"]
+
+
+def test_amended_term_is_cited(index):
+    resp = search(index, SearchRequest.model_validate(
+        {"filters": {"entity_ids": ["groupe_brenalis"], "end_date": {"before": "2028-12-31"}}}))
+    c09 = next(r for r in resp.results if r.contract_id == "c09")
+    assert c09.end_date.isoformat() == "2028-06-30" and c09.amended_by == ["c18"]
+    assert [a.chunk_id for a in c09.relevant_articles] == ["c09-3", "c18-2"]  # DURÉE du contrat, REPORT DU TERME de l'avenant
+
+
+def test_empty_filters_are_ignored(index):
+    resp = search(index, SearchRequest.model_validate({"filters": {"end_date": {}, "governing_law": {"not_in": []}}}))
+    assert len(resp.results) == 20
+    assert all(r.relevant_articles == [] for r in resp.results)
 
 
 def test_foreign_governing_law(index):
@@ -61,6 +76,11 @@ def test_query_finds_what_metadata_misses(index):
 def test_query_without_match_returns_nothing(index):
     resp = search(index, SearchRequest(query="blockchain cryptomonnaie"))
     assert resp.results == []
+
+
+def test_query_with_only_stopwords_is_an_error(index):
+    with pytest.raises(ValueError, match="mots vides"):
+        search(index, SearchRequest(query="le la de"))
 
 
 def test_top_k(index):

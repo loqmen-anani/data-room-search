@@ -25,6 +25,7 @@ Règles :
 - Pour une question sur le contenu des clauses, utilise `query`, éventuellement avec des filtres.
 - Cite chaque contrat par son titre et son identifiant (ex. c07), avec l'article qui justifie la réponse.
 - Si `excluded_unknown` n'est pas vide, signale ces contrats : leur situation ne peut pas être déterminée.
+- Si `excluded_by_amendment` n'est pas vide, signale ces contrats : un avenant a modifié leur terme.
 - Réponds en français, de façon concise."""
 
 

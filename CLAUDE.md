@@ -10,11 +10,11 @@
 ## Architecture retenue (4 étapes)
 
 1. **Réception de la demande** : l'agent reformule la question et appelle un tool unique, `search_data_room`, validé par Pydantic : `query` (texte libre, optionnel), `filters` (`entity_ids`, `contract_types`, `governing_law` in/not_in, plages `signature_date` / `end_date`) et `top_k`. Les valeurs possibles (entités, types, lois) sont tirées de la data room chargée, injectées dans le schéma (`_inject_enums` dans `tools.py`) et vérifiées à la recherche : une valeur inconnue lève une erreur qui liste les valeurs possibles. Dates absolues uniquement : l'agent convertit « fin 2026 » en `2026-12-31`.
-2. **Indexation** : un chunk par article (regex `ARTICLE n — TITRE`), le texte avant le premier article devient « PRÉAMBULE ». Titre, parties et type du contrat sont indexés avec chaque article. BM25 maison (sans dépendance), tokenisation FR (accents, mots vides, pluriels). Index en mémoire, reconstruit au démarrage (quelques ms).
+2. **Indexation** : un chunk par article (regex `ARTICLE n — TITRE`), le texte avant le premier article devient « PRÉAMBULE ». Titre, parties et type du contrat sont indexés avec chaque article. BM25 maison (sans dépendance), tokenisation FR (accents, mots vides, pluriels). Index en mémoire, reconstruit au démarrage (quelques ms). Avenants (type ou titre « avenant ») rattachés à leur contrat : mêmes parties, date de signature du contrat citée dans l'avenant (à défaut, seul candidat) ; un report de terme met à jour `end_date` (`initial_end_date` garde la valeur des métadonnées). Sans rattachement possible : avertissement sur l'avenant.
 3. **Recherche** : pré-filtrage sur les métadonnées, puis :
    - sans `query` → **tous** les candidats (réponse exhaustive, pas de top-k) ;
    - avec `query` → BM25 sur les articles des candidats, score du contrat = son meilleur article, `top_k` premiers.
-4. **Sortie** : par contrat, `matched_filters` et jusqu'à 3 `relevant_articles` (heading + extrait + score). L'article qui justifie un filtre (DURÉE, LOI APPLICABLE) remonte aussi sans query. Un contrat dont le champ filtré est vide va dans `excluded_unknown` : **jamais écarté en silence**. Le tool `get_contract` renvoie le texte par article pour vérifier.
+4. **Sortie** : par contrat, `matched_filters` et jusqu'à 3 `relevant_articles` (heading + extrait + score). L'article qui justifie un filtre (DURÉE, LOI APPLICABLE) remonte aussi sans query. Un contrat dont le champ filtré est vide va dans `excluded_unknown`, un contrat écarté par le filtre de date à cause d'un avenant dans `excluded_by_amendment` : **jamais écarté en silence**. Chaque résultat porte `amends` / `amended_by` et `warnings` (SIREN invalide, terme modifié…) ; un contrat prorogé cite aussi l'article de durée de l'avenant. Le tool `get_contract` renvoie le texte par article pour vérifier.
 
 Positionnement : c'est un **RAG agentique hybride**. Le chemin `query` est du RAG (retrieval BM25) ; le chemin `filters` est une requête structurée construite par le LLM (self-query), pas du RAG. Le RAG classique (top-k) échoue sur ce type de questions : exhaustivité, filtres, comparaison entre documents.
 
@@ -52,7 +52,7 @@ Positionnement : c'est un **RAG agentique hybride**. Le chemin `query` est du RA
 │   ├── config.py           chemins et modèle (variables d'environnement)
 │   ├── models.py           entrée/sortie du tool (valeurs des filtres : tirées de la data room)
 │   ├── loader.py           chargement du JSON + normalisation (identifiants d'entités, dates, SIREN)
-│   ├── indexer.py          découpage par article, tokenisation, BM25, DataRoomIndex (entités, types, lois)
+│   ├── indexer.py          découpage par article, tokenisation, BM25, DataRoomIndex (entités, types, lois, avenants)
 │   ├── search.py           filtres (match / exclu / inconnu), valeurs inconnues rejetées, classement, articles
 │   ├── tools.py            get_contract, tool_definitions() (format API Claude, schéma aplati, valeurs injectées), run_tool()
 │   ├── agent.py            boucle tool-use avec Ollama + CLI
@@ -93,13 +93,17 @@ Environnement : Python 3.14 (`.venv`), projet installé en éditable. Ollama 0.3
 
 | Question | Résultat | Signalés à part |
 |---|---|---|
-| Brenalis (`groupe_brenalis`), fin avant fin 2026 | c04, c09 | `excluded_unknown` : c08, c17 ; c12 (Brénalys) exclu |
+| Brenalis (`groupe_brenalis`), fin avant fin 2026 | c04 | `excluded_unknown` : c08, c17 ; `excluded_by_amendment` : c09 (reporté au 2028-06-30 par c18) ; c12 (Brénalys) exclu |
 | Droit étranger | c05 (new-yorkais), c16 (suisse), c20 (traduction de c05) | c10 (loi non renseignée) |
 | « exclusivité territoriale » / « franchise » | c03 (ARTICLE 4) / c13 (typé « licence ») | — |
 
-## Pièges connus du jeu fictif (non traités pour l'instant)
+## Pièges connus du jeu fictif
 
-- c09 : terme reporté par l'avenant c18 (faux positif pour « fin avant fin 2026 ») ; doublons {c11, c19} (même convention téléversée deux fois) et {c05, c20} (contrat en anglais et sa traduction de courtoisie).
+Traité : c09, terme reporté au 2028-06-30 par l'avenant c18 (`excluded_by_amendment` pour « fin avant fin 2026 »).
+
+Non traités pour l'instant :
+
+- Doublons {c11, c19} (même convention téléversée deux fois) et {c05, c20} (contrat en anglais et sa traduction de courtoisie).
 - c15 : fin 2027-03-31 dans les métadonnées, 30/09/2026 dans le texte ; c13 est une franchise typée « contrat de licence ».
 - c10 sans loi applicable ; SIREN « en cours » (c13) ; c08 (cession) et c14 (garantie) signés le même jour par les mêmes parties, sans être des doublons ; entités distinctes à noms proches : Groupe Brenalis / Brénalys Advisory, Cabinet Morand / M. Étienne Morand, Foncière Verdane / Comptoir Verdane.
 
@@ -110,7 +114,8 @@ Environnement : Python 3.14 (`.venv`), projet installé en éditable. Ollama 0.3
 
 ## Limites et prochaines étapes
 
-- Pas de tool pour « Y a-t-il des doublons ? » : sur 20 contrats, l'agent peut trouver les paires en demandant la liste complète (filtres vides), ce qui ne passe pas à l'échelle. Pas de lien avenant → contrat.
+- Pas de tool pour « Y a-t-il des doublons ? » : sur 20 contrats, l'agent peut trouver les paires en demandant la liste complète (filtres vides), ce qui ne passe pas à l'échelle.
+- Avenants : seul le report de terme est appliqué (pas les autres modifications) ; rattachement par règle simple, pas de résolution quand l'avenant ne cite pas la date du contrat et que plusieurs contrats sont possibles.
 - Bruit sur les requêtes texte : le préfixe titre/type fait matcher des contrats dont seul le titre correspond ; pas de seuil de pertinence (piste : couper sous ~40 % du meilleur score).
 - Recherche lexicale seulement : une reformulation sans les mots du contrat ne trouve rien → embeddings + RRF.
 - Identifiants d'entités = nom normalisé : pas de rapprochement des sigles ou fautes de frappe (voulu) ; à grande échelle, un tool `resolve_parties`.
